@@ -1,9 +1,12 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../utils/prisma');
 const logger = require('../utils/logger');
 const { generateResetToken } = require('../utils/helpers');
 const Bull = require('bull');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL);
 
@@ -201,4 +204,68 @@ function sanitizeUser(user) {
   return safe;
 }
 
-module.exports = { register, login, refreshToken, forgotPassword, resetPassword };
+async function googleAuth(idToken, requestId) {
+  // Verify the Google ID token
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+  const { sub: googleId, email, name, picture } = payload;
+
+  if (!email) {
+    const err = new Error('Google account has no email address');
+    err.status = 400;
+    throw err;
+  }
+
+  // Find existing user by googleId or email
+  let user = await prisma.user.findFirst({
+    where: { OR: [{ googleId }, { email }] },
+  });
+
+  if (user) {
+    // Link googleId if they previously registered with email
+    if (!user.googleId) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { googleId },
+      });
+    }
+    if (user.status === 'suspended') {
+      const err = new Error('Account suspended');
+      err.status = 403;
+      throw err;
+    }
+  } else {
+    // New user — create account
+    user = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: { email, name, googleId, role: 'client', status: 'active' },
+      });
+      await tx.clientWallet.create({ data: { userId: u.id, currency: 'RWF' } });
+      await tx.auditLog.create({
+        data: {
+          entityType: 'user', entityId: u.id, action: 'register_google',
+          actorId: u.id, actorRole: 'client',
+          payload: { email, name }, requestId,
+        },
+      });
+      return u;
+    });
+
+    await notifQueue.add('send_email', {
+      template: 'welcome_client',
+      to: email,
+      data: { name },
+      idempotency_key: `welcome_${user.id}`,
+    });
+
+    logger.info({ msg: 'User registered via Google', userId: user.id, requestId });
+  }
+
+  const tokens = generateTokens(user);
+  return { user: sanitizeUser(user), ...tokens };
+}
+
+module.exports = { register, login, googleAuth, refreshToken, forgotPassword, resetPassword };

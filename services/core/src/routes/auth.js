@@ -2,6 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } = require('../middleware/validate');
 const authService = require('../services/authService');
+
 const { authenticate } = require('../middleware/auth');
 const { agentUpload } = require('../middleware/upload');
 
@@ -40,6 +41,24 @@ router.post('/login', authLimiter, async (req, res, next) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    res.json({ user: result.user, accessToken: result.accessToken });
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/v1/auth/google
+ */
+router.post('/google', authLimiter, async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: 'idToken is required' });
+    const result = await authService.googleAuth(idToken, req.requestId);
+    res.cookie('refreshToken', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
     res.json({ user: result.user, accessToken: result.accessToken });
   } catch (err) { next(err); }
 });

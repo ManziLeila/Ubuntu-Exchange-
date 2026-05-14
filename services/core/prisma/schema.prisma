@@ -16,7 +16,8 @@ model User {
   status       String   @default("active")   // active | suspended | pending
   country      String?
   msisdn       String?  // E.164 format
-  passwordHash String
+  passwordHash String?
+  googleId     String?  @unique
   resetToken   String?
   resetTokenExpiresAt DateTime?
   loginAttempts       Int      @default(0)
