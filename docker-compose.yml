@@ -1,0 +1,169 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: globaltransact-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: globaltransact
+      POSTGRES_USER: gt_user
+      POSTGRES_PASSWORD: gt_dev_password
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gt_user -d globaltransact"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - globaltransact-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: globaltransact-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - globaltransact-network
+
+  core:
+    build: ./services/core
+    container_name: globaltransact-core
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file: ./services/core/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://gt_user:gt_dev_password@postgres:5432/globaltransact
+      REDIS_URL: redis://redis:6379
+      SOCKET_ENABLED: "true"
+      SWAGGER_ENABLED: "true"
+      KYC_REQUIRED: "false"
+      PAYMENT_PROVIDER: "mock_momo"
+      KYC_PROVIDER: "mock_smile"
+      AML_PROVIDER: "mock_complyadv"
+      SMS_PROVIDER: "mock_africas_talking"
+      UPLOADS_DIR: /app/uploads
+      CORE_INTERNAL_URL: http://core:3001
+    networks:
+      - globaltransact-network
+    volumes:
+      - ./services/core/src:/app/src:ro
+      - uploads_data:/app/uploads
+
+  forex:
+    build: ./services/forex
+    container_name: globaltransact-forex
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file: ./services/forex/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      CORE_SERVICE_URL: http://core:3001
+      REDIS_URL: redis://redis:6379
+    networks:
+      - globaltransact-network
+
+  momo:
+    build: ./services/momo
+    container_name: globaltransact-momo
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    env_file: ./services/momo/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      CORE_SERVICE_URL: http://core:3001
+      REDIS_URL: redis://redis:6379
+      MOCK_FAILURE_RATE_COLLECT: "0.05"
+      MOCK_FAILURE_RATE_DISBURSE: "0.03"
+    networks:
+      - globaltransact-network
+
+  notification:
+    build: ./services/notification
+    container_name: globaltransact-notification
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    env_file: ./services/notification/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      REDIS_URL: redis://redis:6379
+    networks:
+      - globaltransact-network
+
+  # Next.js v2 frontend
+  # next:
+  #   build: ./web-v2
+  #   container_name: globaltransact-next
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: 3000
+  #     NEXT_PUBLIC_API_URL: http://localhost:3001
+  #     NEXT_PUBLIC_SOCKET_URL: http://localhost:3001
+  #   depends_on:
+  #     - core
+  #   networks:
+  #     - globaltransact-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: globaltransact-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - core
+      - forex
+      - momo
+      - notification
+    networks:
+      - globaltransact-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+
+networks:
+  globaltransact-network:
+    driver: bridge

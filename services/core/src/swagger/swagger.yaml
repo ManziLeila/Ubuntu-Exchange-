@@ -1,0 +1,723 @@
+openapi: "3.0.3"
+info:
+  title: GlobalTransact API
+  version: "2.0.0"
+  description: |
+    International money transfer platform API.
+
+    All endpoints require Bearer JWT authentication unless marked as public.
+
+    **Roles**: client | agent | admin | compliance_officer | super_admin
+servers:
+  - url: /api/v1
+    description: Core API v1
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [client, agent, admin, compliance_officer, super_admin] }
+        status: { type: string, enum: [active, suspended, pending] }
+        country: { type: string }
+        msisdn: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Transfer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        urc: { type: string, description: "12-digit unique reference code" }
+        senderId: { type: string }
+        corridor: { type: string, example: "RWF_GHS" }
+        sendAmount: { type: number }
+        recvAmount: { type: number }
+        sendCurrency: { type: string }
+        recvCurrency: { type: string }
+        fxRate: { type: number }
+        fee: { type: number }
+        status: { type: string, enum: [INITIATED, OTP_PENDING, FUNDS_RECEIVED, PENDING_APPROVAL, APPROVED, PAYOUT_INITIATED, COMPLETED, FAILED, REVERSED, CANCELLED, FLAGGED, REJECTED] }
+        recipientName: { type: string }
+        recipientMsisdn: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    KycApplication:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        status: { type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED, REQUIRES_DOCS] }
+        riskScore: { type: integer, minimum: 0, maximum: 100 }
+        riskLevel: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        submittedAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time }
+
+    Beneficiary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        nickname: { type: string }
+        fullName: { type: string }
+        msisdn: { type: string }
+        country: { type: string }
+        currency: { type: string }
+        payoutMethod: { type: string, enum: [momo, bank, cash] }
+        isFavorite: { type: boolean }
+
+    FraudAlert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+        status: { type: string, enum: [OPEN, INVESTIGATING, RESOLVED, FALSE_POSITIVE] }
+        details: { type: object }
+        createdAt: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        channel: { type: string, enum: [email, sms, in_app] }
+        title: { type: string }
+        body: { type: string }
+        isRead: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Authentication]
+      security: []
+      summary: Register a new client account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                password: { type: string, minLength: 10 }
+                country: { type: string }
+                msisdn: { type: string }
+      responses:
+        201: { description: Registered successfully }
+        409: { description: Email already registered }
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      security: []
+      summary: Login and receive JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        401: { description: Invalid credentials }
+        423: { description: Account locked }
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      security: []
+      summary: Refresh access token using refresh cookie
+      responses:
+        200: { description: New access token issued }
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Invalidate refresh token
+      responses:
+        200: { description: Logged out }
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      security: []
+      summary: Request password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        200: { description: Reset email sent (always 200 to prevent enumeration) }
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      security: []
+      summary: Reset password with token
+      responses:
+        200: { description: Password reset successful }
+
+  /transfers:
+    post:
+      tags: [Transfers]
+      summary: Initiate a new money transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipientName, recipientMsisdn, recipientCountry, sendCurrency, recvCurrency, sendAmount]
+              properties:
+                recipientName: { type: string }
+                recipientMsisdn: { type: string }
+                recipientCountry: { type: string }
+                sendCurrency: { type: string, enum: [RWF, USD, EUR, GBP, KES, UGX, GHS] }
+                recvCurrency: { type: string, enum: [RWF, USD, EUR, GBP, KES, UGX, GHS] }
+                sendAmount: { type: number, minimum: 1 }
+                fundingMethod: { type: string, enum: [momo, cash, wallet, bank], default: momo }
+                payoutMethod: { type: string, enum: [momo, cash, bank], default: momo }
+                beneficiaryId: { type: string, format: uuid }
+      responses:
+        201: { description: Transfer initiated }
+        422: { description: Blocked by fraud engine or insufficient funds }
+        503: { description: FX rates stale or no liquidity }
+
+    get:
+      tags: [Transfers]
+      summary: List own transfers
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        200: { description: Transfer list }
+
+  /transfers/{urc}:
+    get:
+      tags: [Transfers]
+      summary: Get transfer by URC
+      parameters:
+        - in: path
+          name: urc
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Transfer details }
+        404: { description: Not found }
+
+  /transfers/{id}/approve:
+    post:
+      tags: [Transfers]
+      summary: Admin approve transfer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Transfer approved }
+
+  /transfers/{id}/reject:
+    post:
+      tags: [Transfers]
+      summary: Admin reject transfer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Transfer rejected }
+
+  /kyc/documents:
+    post:
+      tags: [KYC]
+      summary: Upload KYC documents
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                national_id: { type: string, format: binary }
+                passport: { type: string, format: binary }
+                selfie: { type: string, format: binary }
+                utility_bill: { type: string, format: binary }
+      responses:
+        201: { description: Documents submitted }
+
+  /kyc/status:
+    get:
+      tags: [KYC]
+      summary: Get own KYC application status
+      responses:
+        200:
+          description: KYC status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application: { $ref: '#/components/schemas/KycApplication' }
+                  documents: { type: array }
+
+  /kyc/admin/applications:
+    get:
+      tags: [KYC]
+      summary: List all KYC applications (admin/compliance)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED, REQUIRES_DOCS] }
+      responses:
+        200: { description: Applications list }
+
+  /kyc/admin/applications/{id}/review:
+    post:
+      tags: [KYC]
+      summary: Review a KYC application
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVED, REJECTED, REQUIRES_DOCS, UNDER_REVIEW] }
+                reviewNotes: { type: string }
+                rejectionReason: { type: string }
+      responses:
+        200: { description: Review saved }
+
+  /beneficiaries:
+    get:
+      tags: [Beneficiaries]
+      summary: List saved beneficiaries
+      responses:
+        200: { description: Beneficiaries list }
+    post:
+      tags: [Beneficiaries]
+      summary: Add a new beneficiary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Beneficiary' }
+      responses:
+        201: { description: Beneficiary created }
+
+  /beneficiaries/{id}:
+    get:
+      tags: [Beneficiaries]
+      summary: Get beneficiary by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Beneficiary }
+    put:
+      tags: [Beneficiaries]
+      summary: Update beneficiary
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Updated }
+    delete:
+      tags: [Beneficiaries]
+      summary: Remove beneficiary
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Removed }
+
+  /otp/request:
+    post:
+      tags: [OTP]
+      summary: Request an OTP code
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose]
+              properties:
+                purpose: { type: string, enum: [transaction_confirm, login_2fa, phone_verify] }
+                reference: { type: string }
+      responses:
+        201: { description: OTP sent via SMS and email }
+
+  /otp/verify:
+    post:
+      tags: [OTP]
+      summary: Verify an OTP code
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otpId, code, purpose]
+              properties:
+                otpId: { type: string, format: uuid }
+                code: { type: string, minLength: 6, maxLength: 6 }
+                purpose: { type: string }
+      responses:
+        200: { description: OTP valid }
+        400: { description: Invalid or expired OTP }
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List own notifications
+      responses:
+        200: { description: Notifications list }
+
+  /notifications/unread:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification count
+      responses:
+        200:
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Marked as read }
+
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      responses:
+        200: { description: All marked as read }
+
+  /fraud/alerts:
+    get:
+      tags: [Fraud]
+      summary: List fraud alerts (admin/compliance)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema: { type: string }
+      responses:
+        200: { description: Alerts list }
+
+  /fraud/alerts/{id}/resolve:
+    put:
+      tags: [Fraud]
+      summary: Resolve a fraud alert
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, resolution]
+              properties:
+                status: { type: string, enum: [RESOLVED, FALSE_POSITIVE, INVESTIGATING] }
+                resolution: { type: string }
+      responses:
+        200: { description: Alert resolved }
+
+  /fraud/aml-checks:
+    get:
+      tags: [Fraud]
+      summary: List AML screening checks
+      responses:
+        200: { description: AML checks list }
+
+  /fraud/aml-checks/{userId}:
+    post:
+      tags: [Fraud]
+      summary: Trigger manual AML screen for a user
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        201: { description: AML check created }
+
+  /reports/request:
+    post:
+      tags: [Reports]
+      summary: Queue a new report generation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [transaction, commission, forex_gain_loss, compliance, audit, settlement, revenue] }
+                dateFrom: { type: string, format: date-time }
+                dateTo: { type: string, format: date-time }
+                corridor: { type: string }
+      responses:
+        202: { description: Report generation queued }
+
+  /reports/{id}/download:
+    get:
+      tags: [Reports]
+      summary: Download a completed report
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Report data (JSON)
+          content:
+            application/json:
+              schema: { type: object }
+
+  /agent/clients:
+    post:
+      tags: [Agent]
+      summary: Register a new client (agent only)
+      responses:
+        201: { description: Client registered }
+    get:
+      tags: [Agent]
+      summary: List agent's registered clients
+      responses:
+        200: { description: Clients list }
+
+  /agent/transfers:
+    get:
+      tags: [Agent]
+      summary: List transfers initiated by this agent
+      responses:
+        200: { description: Transfers list }
+
+  /agent/commissions:
+    get:
+      tags: [Agent]
+      summary: Get agent commission history
+      responses:
+        200: { description: Commission history }
+
+  /agent/float:
+    get:
+      tags: [Agent]
+      summary: Get agent float balances
+      responses:
+        200: { description: Float balances }
+
+  /super/config:
+    get:
+      tags: [Super Admin]
+      summary: Get all system config values
+      responses:
+        200: { description: Config list }
+
+  /super/config/{key}:
+    put:
+      tags: [Super Admin]
+      summary: Update a system config value
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Config updated }
+
+  /super/users:
+    get:
+      tags: [Super Admin]
+      summary: List all platform users
+      responses:
+        200: { description: Users list }
+
+  /super/users/{id}/role:
+    put:
+      tags: [Super Admin]
+      summary: Change a user's role
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Role updated }
+
+  /super/users/{id}/status:
+    put:
+      tags: [Super Admin]
+      summary: Suspend or reactivate a user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200: { description: Status updated }
+
+  /super/audit:
+    get:
+      tags: [Super Admin]
+      summary: Full audit log with filters
+      responses:
+        200: { description: Audit log entries }
+
+  /super/platform-stats:
+    get:
+      tags: [Super Admin]
+      summary: Comprehensive platform statistics
+      responses:
+        200: { description: Platform stats }
+
+  /super/limits:
+    post:
+      tags: [Super Admin]
+      summary: Set transaction limits per role
+      responses:
+        200: { description: Limits updated }
+
+  /forex/rate:
+    get:
+      tags: [Forex]
+      summary: Get current exchange rate for a corridor
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, example: RWF }
+        - in: query
+          name: to
+          required: true
+          schema: { type: string, example: GHS }
+      responses:
+        200:
+          description: Current rate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  corridor: { type: string }
+                  clientRate: { type: number }
+                  midRate: { type: number }
+                  spreadPct: { type: number }
+                  isStale: { type: boolean }
+                  ageMinutes: { type: number }
+
+  /forex/corridors:
+    get:
+      tags: [Forex]
+      summary: List all available corridors
+      responses:
+        200: { description: Corridors list }
+
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Admin dashboard summary stats
+      responses:
+        200: { description: Dashboard stats }
+
+  /admin/liquidity:
+    get:
+      tags: [Admin]
+      summary: Platform liquidity pools
+      responses:
+        200: { description: Liquidity data }
+
+  /admin/agents:
+    get:
+      tags: [Admin]
+      summary: List all agents
+      responses:
+        200: { description: Agents list }
+    post:
+      tags: [Admin]
+      summary: Create a new agent account
+      responses:
+        201: { description: Agent created }
+
+  /admin/currencies:
+    get:
+      tags: [Admin]
+      summary: List all currency corridor settings
+      responses:
+        200: { description: Currency settings }

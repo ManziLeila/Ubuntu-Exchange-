@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  role         String   @default("client")   // client | agent | admin | compliance_officer | super_admin
+  status       String   @default("active")   // active | suspended | pending
+  country      String?
+  msisdn       String?  // E.164 format
+  passwordHash String
+  resetToken   String?
+  resetTokenExpiresAt DateTime?
+  loginAttempts       Int      @default(0)
+  lockedUntil         DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clientWallet    ClientWallet?
+  agentWallets    AgentWallet[]
+  sentTransfers   Transfer[]        @relation("SenderTransfers")
+  agentTransfers  Transfer[]        @relation("AgentTransfers")
+  adminActions    Transfer[]        @relation("AdminTransfers")
+  auditLogs       AuditLog[]
+
+  // New v2 relations
+  kycApplication  KycApplication?
+  kycDocuments    KycDocument[]
+  kycDocReviewer  KycDocument[]     @relation("KycReviewer")
+  kycAppReviewer  KycApplication[]  @relation("KycApplicationReviewer")
+  beneficiaries   Beneficiary[]
+  otpCodes        OtpCode[]
+  fraudAlerts     FraudAlert[]
+  amlChecks       AmlCheck[]
+  notifications   Notification[]
+  agentProfile    AgentProfile?
+  commissions     Commission[]
+}
+
+// ── Wallets ───────────────────────────────────────────────────────────────────
+model ClientWallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  currency  String   @default("RWF")
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User           @relation(fields: [userId], references: [id])
+  ledger ClientLedger[]
+}
+
+model ClientLedger {
+  id            String   @id @default(uuid())
+  walletId      String
+  type          String   // deposit | transfer_debit | refund | withdrawal
+  amount        Decimal  @db.Decimal(15, 2)
+  direction     String   // credit | debit
+  balanceBefore Decimal  @db.Decimal(15, 2)
+  balanceAfter  Decimal  @db.Decimal(15, 2)
+  reference     String?  // transferId or external ref
+  description   String
+  createdAt     DateTime @default(now())
+
+  wallet ClientWallet @relation(fields: [walletId], references: [id])
+}
+
+model AgentWallet {
+  id        String   @id @default(uuid())
+  agentId   String
+  currency  String
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent  User         @relation(fields: [agentId], references: [id])
+  ledger AgentLedger[]
+
+  @@unique([agentId, currency])
+}
+
+model AgentLedger {
+  id            String   @id @default(uuid())
+  walletId      String
+  type          String   // top_up | transfer_debit | commission | reversal
+  amount        Decimal  @db.Decimal(15, 2)
+  direction     String   // credit | debit
+  balanceBefore Decimal  @db.Decimal(15, 2)
+  balanceAfter  Decimal  @db.Decimal(15, 2)
+  reference     String?
+  description   String
+  createdAt     DateTime @default(now())
+
+  wallet AgentWallet @relation(fields: [walletId], references: [id])
+}
+
+// ── Platform Liquidity Pools ──────────────────────────────────────────────────
+model PlatformAccount {
+  id        String   @id @default(uuid())
+  currency  String   @unique  // RWF | GHS | UGX | KES | USD
+  country   String
+  type      String   // collection | payout
+  label     String
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  alertThreshold Decimal @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ledger    PlatformLedger[]
+}
+
+model PlatformLedger {
+  id            String   @id @default(uuid())
+  accountId     String
+  transferId    String?
+  type          String   // collection | payout | top_up | reversal | fee
+  amount        Decimal  @db.Decimal(15, 2)
+  direction     String   // credit | debit
+  balanceBefore Decimal  @db.Decimal(15, 2)
+  balanceAfter  Decimal  @db.Decimal(15, 2)
+  description   String
+  createdAt     DateTime @default(now())
+
+  account  PlatformAccount @relation(fields: [accountId], references: [id])
+  transfer Transfer?       @relation(fields: [transferId], references: [id])
+}
+
+// ── Transfers — The Core Ledger ───────────────────────────────────────────────
+// Status lifecycle:
+// INITIATED → OTP_PENDING → FUNDS_RECEIVED → PENDING_APPROVAL → APPROVED → PAYOUT_INITIATED → COMPLETED
+//                                                    ↓
+//                                                REJECTED → REFUNDED
+// Also: FAILED | REVERSED | CANCELLED | FLAGGED
+model Transfer {
+  id     String @id @default(uuid())
+  urc    String @unique  // 12-digit cryptographically random code
+
+  // Parties
+  senderId       String
+  senderName     String
+  senderEmail    String
+  senderMsisdn   String?
+  agentId        String?   // null if self-serve via app
+  adminId        String?   // who approved/rejected
+
+  // Recipient
+  recipientName    String
+  recipientMsisdn  String   // E.164 — MTN MoMo number for payout
+  recipientCountry String
+
+  // Corridor & amounts
+  corridor       String    // e.g. RWF_GHS
+  sendCurrency   String
+  recvCurrency   String
+  sendAmount     Decimal   @db.Decimal(15, 2)
+  recvAmount     Decimal   @db.Decimal(15, 2)
+  fxRate         Decimal   @db.Decimal(15, 6)  // locked at initiation
+  fxRateId       String
+  fee            Decimal   @default(0) @db.Decimal(15, 2)
+  totalCharged   Decimal   @db.Decimal(15, 2)  // sendAmount + fee
+
+  // Methods
+  fundingMethod  String    @default("momo")  // momo | cash | wallet | bank
+  payoutMethod   String    @default("momo")  // momo | cash | bank
+
+  // MoMo refs
+  momoCollectionRef  String?   // MTN Rwanda reference ID
+  momoPayoutRef      String?   // MTN Ghana reference ID
+
+  // Status
+  status         String    @default("INITIATED")
+  adminNote      String?
+  rejectionReason String?
+
+  // v2 fields
+  otpVerified    Boolean   @default(false)
+  riskScore      Int       @default(0)
+  flaggedReason  String?
+  beneficiaryId  String?
+  retryCount     Int       @default(0)
+
+  // Timestamps
+  fundsReceivedAt    DateTime?
+  pendingApprovalAt  DateTime?
+  approvedAt         DateTime?
+  rejectedAt         DateTime?
+  payoutInitiatedAt  DateTime?
+  completedAt        DateTime?
+  refundedAt         DateTime?
+  failedAt           DateTime?
+  reversedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sender         User             @relation("SenderTransfers", fields: [senderId], references: [id])
+  agent          User?            @relation("AgentTransfers", fields: [agentId], references: [id])
+  admin          User?            @relation("AdminTransfers", fields: [adminId], references: [id])
+  fxRateRef      ForexRate        @relation(fields: [fxRateId], references: [id])
+  platformLedger PlatformLedger[]
+  commissions    Commission[]
+  webhooks       TransactionWebhook[]
+}
+
+// ── Forex Rates ───────────────────────────────────────────────────────────────
+model ForexRate {
+  id         String   @id @default(uuid())
+  corridor   String   // RWF_GHS | RWF_UGX | RWF_KES | RWF_USD
+  fromCcy    String
+  toCcy      String
+  midRate    Decimal  @db.Decimal(15, 6)
+  spreadPct  Decimal  @db.Decimal(5, 4)   // e.g. 0.0250 = 2.5%
+  clientRate Decimal  @db.Decimal(15, 6)  // midRate * (1 - spreadPct)
+  fetchedAt  DateTime
+  isStale    Boolean  @default(false)
+  setByAdmin Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  transfers Transfer[]
+  currencySetting CurrencySetting?
+
+  @@index([corridor, fetchedAt])
+}
+
+// ── Currency Settings — Admin Control ──────────────────────────────────────────
+model CurrencySetting {
+  id           String   @id @default(uuid())
+  corridor     String   @unique  // RWF_GHS | RWF_UGX | RWF_KES | RWF_USD
+  mode         String   @default("AUTOMATIC")  // AUTOMATIC | MANUAL
+  manualRate   Decimal? @db.Decimal(15, 6)  // Only used when mode = MANUAL
+  spread       Decimal  @default(0.025) @db.Decimal(5, 4)  // 2.5% default
+  isActive     Boolean  @default(true)
+  lastRate     Decimal? @db.Decimal(15, 6)  // Last rate used (manual or fetched)
+  lastFetchedAt DateTime?
+  autoFallbackRate Decimal? @db.Decimal(15, 6)  // Fallback if auto fetch fails
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  forexRate ForexRate @relation(fields: [id], references: [id])
+}
+
+// ── Audit Log — append-only ───────────────────────────────────────────────────
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String   // transfer | user | wallet | platform_account | session | kyc
+  entityId   String
+  action     String   // login | register | initiate_transfer | approve | reject | payout | top_up | kyc_review
+  actorId    String?
+  actorRole  String?
+  payload    Json
+  requestId  String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor    User?     @relation(fields: [actorId], references: [id])
+}
+
+// ── KYC ───────────────────────────────────────────────────────────────────────
+model KycApplication {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  status          String    @default("PENDING")
+  // PENDING | UNDER_REVIEW | APPROVED | REJECTED | REQUIRES_DOCS
+  riskScore       Int       @default(0)    // 0–100 simulated
+  riskLevel       String    @default("LOW") // LOW | MEDIUM | HIGH
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  rejectionReason String?
+  reviewNotes     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id])
+  reviewer  User?    @relation("KycApplicationReviewer", fields: [reviewedBy], references: [id])
+}
+
+model KycDocument {
+  id             String    @id @default(uuid())
+  userId         String
+  type           String    // national_id | passport | drivers_license | selfie | utility_bill
+  fileUrl        String    // relative path /uploads/kyc/{userId}/{filename}
+  fileName       String
+  mimeType       String
+  status         String    @default("PENDING")
+  // PENDING | APPROVED | REJECTED
+  reviewedBy     String?
+  reviewNotes    String?
+  ocrData        Json?     // simulated OCR extraction results
+  faceMatchScore Decimal?  @db.Decimal(5, 4)  // 0.0–1.0 simulated (selfie only)
+  uploadedAt     DateTime  @default(now())
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user     User  @relation(fields: [userId], references: [id])
+  reviewer User? @relation("KycReviewer", fields: [reviewedBy], references: [id])
+}
+
+// ── Beneficiaries ─────────────────────────────────────────────────────────────
+model Beneficiary {
+  id           String    @id @default(uuid())
+  userId       String
+  nickname     String
+  fullName     String
+  msisdn       String?
+  country      String
+  currency     String
+  bankName     String?
+  bankAccount  String?
+  bankCode     String?
+  payoutMethod String    @default("momo")  // momo | bank | cash
+  isActive     Boolean   @default(true)
+  isFavorite   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ── OTP Codes ─────────────────────────────────────────────────────────────────
+model OtpCode {
+  id         String    @id @default(uuid())
+  userId     String
+  purpose    String    // transaction_confirm | login_2fa | phone_verify | password_reset
+  codeHash   String    // bcrypt hash of 6-digit code
+  reference  String?   // transferId or other entity
+  isUsed     Boolean   @default(false)
+  failedAttempts Int   @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, purpose, isUsed])
+}
+
+// ── Fraud & AML ───────────────────────────────────────────────────────────────
+model FraudAlert {
+  id          String    @id @default(uuid())
+  userId      String?
+  transferId  String?
+  type        String
+  // velocity_breach | large_transaction | suspicious_country
+  // failed_otp | device_mismatch | blacklist_hit | aml_flag | sanctions_hit
+  severity    String    @default("MEDIUM")  // LOW | MEDIUM | HIGH | CRITICAL
+  details     Json
+  status      String    @default("OPEN")    // OPEN | INVESTIGATING | RESOLVED | FALSE_POSITIVE
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  resolution  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model AmlCheck {
+  id           String    @id @default(uuid())
+  userId       String
+  transferId   String?
+  provider     String    @default("mock_complyadv")  // mock_complyadv | dow_jones | refinitiv
+  status       String    @default("PENDING")   // PENDING | CLEAR | FLAGGED | REVIEW
+  riskScore    Int       @default(0)           // 0–100
+  matchDetails Json?
+  screenedAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String
+  type       String    // transfer_update | kyc_update | fraud_alert | system | otp | security
+  channel    String    // email | sms | in_app
+  title      String
+  body       String
+  data       Json?
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  sentAt     DateTime?
+  status     String    @default("PENDING")  // PENDING | SENT | FAILED
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+model TransactionWebhook {
+  id             String    @id @default(uuid())
+  transferId     String
+  event          String    // status_changed | payment_received | payout_sent | completed | failed | reversed
+  payload        Json
+  endpoint       String?   // client-configured webhook URL
+  attempts       Int       @default(0)
+  lastAttemptAt  DateTime?
+  status         String    @default("PENDING")  // PENDING | DELIVERED | FAILED | SKIPPED
+  statusCode     Int?
+  responseBody   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  transfer Transfer @relation(fields: [transferId], references: [id])
+}
+
+// ── Agent Profile & Commissions ───────────────────────────────────────────────
+model AgentProfile {
+  id              String    @id @default(uuid())
+  agentId         String    @unique
+  commissionRate  Decimal   @default(0.005) @db.Decimal(5, 4)  // 0.5% default
+  totalCommission Decimal   @default(0) @db.Decimal(15, 2)
+  territory       String?
+  licenseNumber   String?
+  isVerified      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  agent User @relation(fields: [agentId], references: [id])
+}
+
+model Commission {
+  id          String    @id @default(uuid())
+  agentId     String
+  transferId  String
+  amount      Decimal   @db.Decimal(15, 2)
+  currency    String
+  rate        Decimal   @db.Decimal(5, 4)  // rate applied
+  status      String    @default("PENDING")  // PENDING | PAID | CANCELLED
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  agent    User     @relation(fields: [agentId], references: [id])
+  transfer Transfer @relation(fields: [transferId], references: [id])
+}
+
+// ── System Configuration ──────────────────────────────────────────────────────
+model SystemConfig {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       Json
+  description String?
+  category    String    @default("general")  // general | fraud | limits | fees | kyc | notifications
+  updatedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+model Report {
+  id           String    @id @default(uuid())
+  type         String
+  // transaction | commission | forex_gain_loss | compliance | audit | settlement | revenue
+  title        String
+  generatedBy  String
+  parameters   Json      // filters applied (date range, corridor, etc.)
+  status       String    @default("PENDING")  // PENDING | GENERATING | READY | FAILED
+  recordCount  Int?
+  fileUrl      String?   // path to generated CSV/JSON
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+}
