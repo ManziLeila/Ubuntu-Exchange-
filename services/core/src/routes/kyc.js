@@ -57,7 +57,7 @@ router.get('/documents', authenticate, async (req, res, next) => {
 });
 
 // Admin/Compliance: list all applications
-router.get('/admin/applications', authenticate, authorize(ROLES.ADMIN, ROLES.COMPLIANCE, ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.get('/admin/applications', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -68,7 +68,7 @@ router.get('/admin/applications', authenticate, authorize(ROLES.ADMIN, ROLES.COM
 });
 
 // Admin/Compliance: get single application with documents
-router.get('/admin/applications/:id', authenticate, authorize(ROLES.ADMIN, ROLES.COMPLIANCE, ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.get('/admin/applications/:id', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const prisma = require('../utils/prisma');
     const app = await prisma.kycApplication.findUnique({
@@ -84,7 +84,7 @@ router.get('/admin/applications/:id', authenticate, authorize(ROLES.ADMIN, ROLES
 });
 
 // Admin/Compliance: review (approve/reject/request-docs)
-router.post('/admin/applications/:id/review', authenticate, authorize(ROLES.ADMIN, ROLES.COMPLIANCE, ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.post('/admin/applications/:id/review', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const parsed = kycReviewSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues });

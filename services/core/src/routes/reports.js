@@ -4,7 +4,7 @@ const { authenticate, authorize, ROLES } = require('../middleware/auth');
 const reportService = require('../services/reportService');
 const { reportRequestSchema } = require('../middleware/validate');
 
-const STAFF = [ROLES.ADMIN, ROLES.COMPLIANCE, ROLES.SUPER_ADMIN];
+const STAFF = [ROLES.ADMIN];
 
 router.post('/request', authenticate, authorize(...STAFF), async (req, res, next) => {
   try {
@@ -20,7 +20,7 @@ router.get('/', authenticate, authorize(...STAFF), async (req, res, next) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const result = await reportService.listReports(
-      req.user.role === ROLES.SUPER_ADMIN ? null : req.user.id,
+      req.user.id,
       page, limit
     );
     res.json(result);

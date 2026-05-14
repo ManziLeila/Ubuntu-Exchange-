@@ -4,14 +4,14 @@ const { authenticate, authorize, ROLES } = require('../middleware/auth');
 const { systemConfigSchema, transactionLimitSchema } = require('../middleware/validate');
 const prisma = require('../utils/prisma');
 
-router.get('/config', authenticate, authorize(ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.get('/config', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const configs = await prisma.systemConfig.findMany({ orderBy: [{ category: 'asc' }, { key: 'asc' }] });
     res.json({ configs });
   } catch (err) { next(err); }
 });
 
-router.put('/config/:key', authenticate, authorize(ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.put('/config/:key', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const parsed = systemConfigSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues });
@@ -24,7 +24,7 @@ router.put('/config/:key', authenticate, authorize(ROLES.SUPER_ADMIN), async (re
   } catch (err) { next(err); }
 });
 
-router.get('/users', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN), async (req, res, next) => {
+router.get('/users', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -51,7 +51,7 @@ router.get('/users', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN), as
   } catch (err) { next(err); }
 });
 
-router.put('/users/:id/role', authenticate, authorize(ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.put('/users/:id/role', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const validRoles = Object.values(ROLES);
     if (!validRoles.includes(req.body.role)) {
@@ -69,7 +69,7 @@ router.put('/users/:id/role', authenticate, authorize(ROLES.SUPER_ADMIN), async 
   } catch (err) { next(err); }
 });
 
-router.put('/users/:id/status', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN), async (req, res, next) => {
+router.put('/users/:id/status', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const { status } = req.body;
     if (!['active', 'suspended', 'pending'].includes(status)) {
@@ -84,7 +84,7 @@ router.put('/users/:id/status', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES
   } catch (err) { next(err); }
 });
 
-router.get('/audit', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.COMPLIANCE), async (req, res, next) => {
+router.get('/audit', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
@@ -109,7 +109,7 @@ router.get('/audit', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.COMPLIANCE
   } catch (err) { next(err); }
 });
 
-router.get('/platform-stats', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN), async (req, res, next) => {
+router.get('/platform-stats', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const [
       totalUsers, totalTransfers, totalAgents, completedTransfers,
@@ -133,7 +133,7 @@ router.get('/platform-stats', authenticate, authorize(ROLES.SUPER_ADMIN, ROLES.A
   } catch (err) { next(err); }
 });
 
-router.post('/limits', authenticate, authorize(ROLES.SUPER_ADMIN), async (req, res, next) => {
+router.post('/limits', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
   try {
     const parsed = transactionLimitSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues });

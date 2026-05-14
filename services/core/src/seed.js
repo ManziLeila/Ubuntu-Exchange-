@@ -7,14 +7,12 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding GlobalTransact v2 database...');
 
-  // ── 1. Demo Users (5 roles) ─────────────────────────────────────────────────
-  const [clientHash, agentHash, adminHash, complianceHash, superHash, agentRwHash, agentGhHash] =
+  // ── 1. Demo Users (3 roles: client | agent | admin) ────────────────────────
+  const [clientHash, agentHash, adminHash, agentRwHash, agentGhHash] =
     await Promise.all([
       bcrypt.hash('Client@12345', 12),
       bcrypt.hash('Agent@12345',  12),
       bcrypt.hash('Admin@12345',  12),
-      bcrypt.hash('Comply@12345', 12),
-      bcrypt.hash('Super@12345',  12),
       bcrypt.hash('Agent@Kigali2024!', 12),
       bcrypt.hash('Agent@Accra2024!',  12),
     ]);
@@ -82,31 +80,6 @@ async function main() {
   });
   console.log('✅ admin@demo.com — Admin@12345');
 
-  const compliance = await prisma.user.upsert({
-    where: { email: 'compliance@demo.com' },
-    update: {},
-    create: {
-      email: 'compliance@demo.com',
-      name: 'Compliance Officer',
-      role: 'compliance_officer',
-      country: 'RW',
-      passwordHash: complianceHash,
-    },
-  });
-  console.log('✅ compliance@demo.com — Comply@12345');
-
-  const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@demo.com' },
-    update: {},
-    create: {
-      email: 'superadmin@demo.com',
-      name: 'Super Administrator',
-      role: 'super_admin',
-      country: 'RW',
-      passwordHash: superHash,
-    },
-  });
-  console.log('✅ superadmin@demo.com — Super@12345');
 
   // ── 2. Legacy agents (kept from v1) ────────────────────────────────────────
   const agentRW = await prisma.user.upsert({
@@ -226,7 +199,7 @@ async function main() {
     await prisma.systemConfig.upsert({
       where: { key: cfg.key },
       update: {},
-      create: { ...cfg, updatedBy: superAdmin.id },
+      create: { ...cfg, updatedBy: admin.id },
     });
   }
   console.log(`✅ SystemConfig: ${configs.length} entries`);
@@ -238,7 +211,7 @@ async function main() {
     create: {
       userId:      client.id,
       status:      'APPROVED',
-      reviewedBy:  compliance.id,
+      reviewedBy:  admin.id,
       reviewedAt:  new Date(),
       reviewNotes: 'Demo auto-approved for dev/test environment.',
       riskScore:   12,
@@ -326,11 +299,9 @@ async function main() {
   // ── Done ─────────────────────────────────────────────────────────────────────
   console.log('\n🎉 Seed complete!\n');
   console.log('  Demo accounts:');
-  console.log('    client@demo.com        / Client@12345');
-  console.log('    agent@demo.com         / Agent@12345');
-  console.log('    admin@demo.com         / Admin@12345');
-  console.log('    compliance@demo.com    / Comply@12345');
-  console.log('    superadmin@demo.com    / Super@12345');
+  console.log('    client@demo.com   / Client@12345');
+  console.log('    agent@demo.com    / Agent@12345');
+  console.log('    admin@demo.com    / Admin@12345  (full admin + compliance + system access)');
   console.log('\n  Legacy accounts:');
   console.log('    admin@globaltransact.com          (unchanged)');
   console.log('    agent.kigali@globaltransact.com   / Agent@Kigali2024!');

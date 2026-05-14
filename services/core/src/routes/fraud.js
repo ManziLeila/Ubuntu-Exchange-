@@ -5,7 +5,7 @@ const fraudService = require('../services/fraudService');
 const { fraudResolutionSchema } = require('../middleware/validate');
 const { getAmlProvider } = require('../integrations');
 
-const STAFF = [ROLES.ADMIN, ROLES.COMPLIANCE, ROLES.SUPER_ADMIN];
+const STAFF = [ROLES.ADMIN];
 
 router.get('/alerts', authenticate, authorize(...STAFF), async (req, res, next) => {
   try {

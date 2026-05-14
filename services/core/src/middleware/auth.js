@@ -49,13 +49,10 @@ function authenticateService(req, res, next) {
   }
 }
 
-// Role constants for all 5 platform roles
 const ROLES = {
   CLIENT: 'client',
   AGENT: 'agent',
   ADMIN: 'admin',
-  COMPLIANCE: 'compliance_officer',
-  SUPER_ADMIN: 'super_admin',
 };
 
 /**
@@ -66,7 +63,7 @@ const ROLES = {
 function requireKyc(req, res, next) {
   if (process.env.KYC_REQUIRED === 'false') return next();
   if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
-  if (req.user.role !== ROLES.CLIENT) return next(); // only clients need KYC
+  if (req.user.role !== ROLES.CLIENT) return next();
   const redis = req.app.locals.redis;
   if (!redis) return next();
   redis.get(`kyc:approved:${req.user.id}`).then(val => {

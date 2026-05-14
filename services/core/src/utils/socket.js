@@ -34,11 +34,8 @@ function initSocket(server) {
     socket.join(socket.userId);
 
     // Join role-based rooms
-    if (['admin', 'super_admin', 'compliance_officer'].includes(socket.userRole)) {
+    if (socket.userRole === 'admin') {
       socket.join('admin_room');
-    }
-    if (socket.userRole === 'super_admin') {
-      socket.join('super_room');
     }
 
     socket.on('disconnect', () => {
