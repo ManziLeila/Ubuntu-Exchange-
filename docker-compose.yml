@@ -64,6 +64,8 @@ services:
       SMS_PROVIDER: "mock_africas_talking"
       UPLOADS_DIR: /app/uploads
       CORE_INTERNAL_URL: http://core:3001
+      # Reflect browser Origin in Access-Control-Allow-Origin (use only for dev/demos).
+      CORS_RELAXED: "true"
     networks:
       - globaltransact-network
     volumes:

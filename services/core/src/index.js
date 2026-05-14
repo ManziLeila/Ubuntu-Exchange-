@@ -22,6 +22,7 @@ const superAdminRoutes = require('./routes/superadmin');
 const webhookRoutes = require('./routes/webhooks');
 const prisma = require('./utils/prisma');
 const logger = require('./utils/logger');
+const { getCorsOriginOption } = require('./utils/corsConfig');
 const { initSocket } = require('./utils/socket');
 
 const app = express();
@@ -37,7 +38,7 @@ if (process.env.SOCKET_ENABLED !== 'false') {
 // ── Security & parsing ────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled for Swagger UI
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: getCorsOriginOption(),
   credentials: true,
 }));
 app.use(express.json({ limit: '2mb' }));

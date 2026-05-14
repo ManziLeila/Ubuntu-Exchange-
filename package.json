@@ -4,7 +4,7 @@
   "description": "GlobalTransact - Financial Transaction Platform",
   "private": true,
   "scripts": {
-    "install-all": "npm install && npm --prefix services/core install && npm --prefix services/forex install && npm --prefix services/notification install && npm --prefix web install",
+    "install-all": "npm install && npm --prefix services/core install && npm --prefix services/forex install && npm --prefix services/notification install",
     "start": "concurrently \"npm --prefix services/core run dev\" \"npm --prefix services/forex start\" \"npm --prefix web start\" --names \"core,forex,web\" --prefix \"[{time}] {name}:\" --kill-others-on-fail",
     "start:core": "npm --prefix services/core run dev",
     "start:forex": "npm --prefix services/forex start",

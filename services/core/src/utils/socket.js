@@ -1,13 +1,14 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const logger = require('./logger');
+const { getCorsOriginOption } = require('./corsConfig');
 
 let io;
 
 function initSocket(server) {
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      origin: getCorsOriginOption(),
       methods: ['GET', 'POST'],
       credentials: true,
     },

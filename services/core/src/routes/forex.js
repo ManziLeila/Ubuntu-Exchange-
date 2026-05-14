@@ -38,6 +38,44 @@ router.get('/rate', async (req, res, next) => {
 });
 
 /**
+ * GET /api/v1/forex/rates?corridor=RWF_GHS — same payload as /rate (Next.js web client)
+ */
+router.get('/rates', async (req, res, next) => {
+  try {
+    const { corridor } = req.query;
+    if (!corridor || typeof corridor !== 'string') {
+      return res.status(400).json({ error: 'corridor query parameter required' });
+    }
+    const i = corridor.lastIndexOf('_');
+    if (i <= 0 || i === corridor.length - 1) {
+      return res.status(400).json({ error: 'invalid corridor (expected FROM_TO, e.g. RWF_GHS)' });
+    }
+    const from = corridor.slice(0, i);
+    const to = corridor.slice(i + 1);
+
+    const rate = await prisma.forexRate.findFirst({
+      where: { corridor },
+      orderBy: { fetchedAt: 'desc' }
+    });
+
+    if (!rate) return res.status(404).json({ error: `No rate for ${corridor}` });
+
+    const ageMinutes = (Date.now() - rate.fetchedAt.getTime()) / 60000;
+    res.json({
+      corridor,
+      from,
+      to,
+      midRate: rate.midRate,
+      clientRate: rate.clientRate,
+      spreadPct: rate.spreadPct,
+      fetchedAt: rate.fetchedAt,
+      isStale: ageMinutes > 15,
+      ageMinutes: Math.round(ageMinutes)
+    });
+  } catch (err) { next(err); }
+});
+
+/**
  * GET /api/v1/forex/corridors — List all available corridors
  */
 router.get('/corridors', async (req, res, next) => {
