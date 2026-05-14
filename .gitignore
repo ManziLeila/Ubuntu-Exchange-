@@ -30,8 +30,9 @@ services/core/uploads/
 # Prisma generated (auto-generated on install)
 # Keep schema.prisma but ignore generated client if needed
 
-# Old frontend (web-v2 is the current frontend)
+# Frontends (managed in separate repos)
 web/
+web-v2/
 
 # IDE
 .vscode/
