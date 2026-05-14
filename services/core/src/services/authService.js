@@ -1,12 +1,9 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../utils/prisma');
 const logger = require('../utils/logger');
 const { generateResetToken } = require('../utils/helpers');
 const Bull = require('bull');
-
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL);
 
@@ -204,14 +201,19 @@ function sanitizeUser(user) {
   return safe;
 }
 
-async function googleAuth(idToken, requestId) {
-  // Verify the Google ID token
-  const ticket = await googleClient.verifyIdToken({
-    idToken,
-    audience: process.env.GOOGLE_CLIENT_ID,
+async function googleAuth(accessToken, requestId) {
+  // Fetch user info from Google using the access token
+  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const payload = ticket.getPayload();
-  const { sub: googleId, email, name, picture } = payload;
+
+  if (!response.ok) {
+    const err = new Error('Invalid Google token');
+    err.status = 401;
+    throw err;
+  }
+
+  const { sub: googleId, email, name } = await response.json();
 
   if (!email) {
     const err = new Error('Google account has no email address');

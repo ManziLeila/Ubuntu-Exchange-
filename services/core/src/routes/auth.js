@@ -50,9 +50,9 @@ router.post('/login', authLimiter, async (req, res, next) => {
  */
 router.post('/google', authLimiter, async (req, res, next) => {
   try {
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ error: 'idToken is required' });
-    const result = await authService.googleAuth(idToken, req.requestId);
+    const { accessToken } = req.body;
+    if (!accessToken) return res.status(400).json({ error: 'accessToken is required' });
+    const result = await authService.googleAuth(accessToken, req.requestId);
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

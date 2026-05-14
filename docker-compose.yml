@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: globaltransact
       POSTGRES_USER: gt_user
-      POSTGRES_PASSWORD: gt_dev_password
+      POSTGRES_PASSWORD: Ubuntu@2026!Secure
     ports:
       - "5437:5432"
     volumes:
@@ -53,7 +53,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: postgresql://gt_user:gt_dev_password@postgres:5432/globaltransact
+      DATABASE_URL: postgresql://gt_user:Ubuntu@2026!Secure@postgres:5432/globaltransact
       REDIS_URL: redis://redis:6379
       SOCKET_ENABLED: "true"
       SWAGGER_ENABLED: "true"
