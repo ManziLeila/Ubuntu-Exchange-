@@ -4,11 +4,11 @@
   "description": "GlobalTransact - Financial Transaction Platform",
   "private": true,
   "scripts": {
-    "install-all": "npm install && npm --prefix services/core install && npm --prefix services/forex install && npm --prefix services/notification install",
-    "start": "concurrently \"npm --prefix services/core run dev\" \"npm --prefix services/forex start\" \"npm --prefix web start\" --names \"core,forex,web\" --prefix \"[{time}] {name}:\" --kill-others-on-fail",
+    "install-all": "npm install && npm --prefix services/core install && npm --prefix services/forex install && npm --prefix services/notification install && npm --prefix web-v2 install",
+    "start": "concurrently \"npm --prefix services/core run dev\" \"npm --prefix services/forex start\" \"npm --prefix web-v2 run dev\" --names \"core,forex,web\" --prefix \"[{time}] {name}:\" --kill-others-on-fail",
     "start:core": "npm --prefix services/core run dev",
     "start:forex": "npm --prefix services/forex start",
-    "start:web": "npm --prefix web start",
+    "start:web": "npm --prefix web-v2 run dev",
     "start:docker": "docker-compose up --build",
     "start:docker-daemon": "docker-compose up -d && echo 'Services running in background. Use docker-compose logs -f to view logs.'",
     "stop": "docker-compose down",
@@ -18,7 +18,7 @@
     "logs": "docker-compose logs -f",
     "logs:core": "docker-compose logs -f core",
     "logs:db": "docker-compose logs -f postgres",
-    "test": "npm --prefix services/core run test && npm --prefix web run test"
+    "test": "npm --prefix services/core run test && npm --prefix web-v2 run test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
