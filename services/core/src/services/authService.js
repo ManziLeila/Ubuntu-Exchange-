@@ -202,11 +202,8 @@ function sanitizeUser(user) {
   return safe;
 }
 
-async function googleAuth(accessToken, requestId) {
-  // Fetch user info from Google using the access token
-  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+async function googleAuth(idToken, requestId) {
+  const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
 
   if (!response.ok) {
     const err = new Error('Invalid Google token');
