@@ -1,4 +1,24 @@
 require('dotenv').config();
+
+// Keep the process alive when Redis is unavailable (Bull / ioredis crash prevention)
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || '';
+  if (err?.code === 'ECONNREFUSED' || msg.includes('MaxRetriesPerRequest') || msg.includes('Redis') || msg.includes('ECONNREFUSED')) {
+    console.error('[core] Redis unavailable (non-fatal):', msg);
+    return;
+  }
+  console.error('[core] Uncaught exception:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.message || String(reason);
+  if (msg.includes('MaxRetriesPerRequest') || msg.includes('Redis') || msg.includes('ECONNREFUSED')) {
+    console.error('[core] Redis rejection suppressed:', msg);
+    return;
+  }
+  console.error('[core] Unhandled rejection:', msg);
+});
+
 const http = require('http');
 const path = require('path');
 const express = require('express');

@@ -6,6 +6,7 @@ const Bull = require('bull');
 const { Decimal } = require('@prisma/client/runtime/library');
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL);
+notifQueue.on('error', (err) => console.error('[core] transferService queue error:', err.message));
 
 function emitSocketEvent(event, room, data) {
   try {

@@ -6,6 +6,7 @@ const { generateResetToken } = require('../utils/helpers');
 const Bull = require('bull');
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL);
+notifQueue.on('error', (err) => console.error('[core] authService queue error:', err.message));
 
 const BCRYPT_ROUNDS = 12;
 const MAX_LOGIN_ATTEMPTS = 10;

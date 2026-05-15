@@ -7,6 +7,7 @@ const { Decimal } = require('@prisma/client/runtime/library');
 const currencyService = require('../services/currencyService');
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL);
+notifQueue.on('error', (err) => console.error('[core] admin queue error:', err.message));
 const router = express.Router();
 
 // All admin routes require admin role
