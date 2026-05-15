@@ -7,7 +7,13 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-const redis = new Redis(process.env.REDIS_URL);
+const redis = new Redis(process.env.REDIS_URL, {
+  lazyConnect: true,
+  maxRetriesPerRequest: null,
+  enableOfflineQueue: false,
+  retryStrategy: (times) => Math.min(times * 1000, 30000),
+});
+redis.on('error', (err) => console.error('[forex] Redis error:', err.message));
 
 const CORRIDORS = [
   { corridor: 'RWF_GHS', from: 'RWF', to: 'GHS' },
@@ -49,7 +55,7 @@ async function fetchAndStoreRates() {
       await pushRateToCore(ratePayload);
 
       // Cache in Redis for fast lookup
-      await redis.setex(`rate:${corridor}`, 300, JSON.stringify({ ...ratePayload, isStale: false }));
+      await redisSetex(`rate:${corridor}`, 300, JSON.stringify({ ...ratePayload, isStale: false }));
     }
 
     console.log(`[forex] Rates updated at ${fetchedAt.toISOString()}`);
@@ -57,13 +63,13 @@ async function fetchAndStoreRates() {
     console.error('[forex] Rate fetch failed:', err.message);
     // Mark all cached rates as stale
     for (const { corridor } of CORRIDORS) {
-      const cached = await redis.get(`rate:${corridor}`);
+      const cached = await redisGet(`rate:${corridor}`);
       if (cached) {
         const parsed = JSON.parse(cached);
         const ageMs = Date.now() - new Date(parsed.fetchedAt).getTime();
         if (ageMs > 15 * 60 * 1000) {
           parsed.isStale = true;
-          await redis.set(`rate:${corridor}`, JSON.stringify(parsed));
+          await redisSet(`rate:${corridor}`, JSON.stringify(parsed));
         }
       }
     }
@@ -79,8 +85,18 @@ async function pushRateToCore(ratePayload) {
   );
 }
 
+async function redisGet(key) {
+  try { return await redis.get(key); } catch { return null; }
+}
+async function redisSet(key, value) {
+  try { await redis.set(key, value); } catch { /* Redis unavailable */ }
+}
+async function redisSetex(key, ttl, value) {
+  try { await redis.setex(key, ttl, value); } catch { /* Redis unavailable */ }
+}
+
 async function getSpread(corridor) {
-  const cached = await redis.get(`spread:${corridor}`);
+  const cached = await redisGet(`spread:${corridor}`);
   if (cached) return parseFloat(cached);
   return DEFAULT_SPREADS[corridor] || 0.025;
 }
@@ -92,9 +108,9 @@ app.get('/healthz', (req, res) => res.json({ status: 'ok', service: 'forex' }));
 app.get('/readyz', async (req, res) => {
   try {
     await redis.ping();
-    res.json({ status: 'ready' });
+    res.json({ status: 'ready', redis: 'up' });
   } catch {
-    res.status(503).json({ status: 'not ready' });
+    res.json({ status: 'ready', redis: 'unavailable' });
   }
 });
 
@@ -106,7 +122,7 @@ app.get('/api/forex/v1/rate', async (req, res) => {
   if (!from || !to) return res.status(400).json({ error: 'from and to required' });
 
   const corridor = `${from}_${to}`;
-  const cached = await redis.get(`rate:${corridor}`);
+  const cached = await redisGet(`rate:${corridor}`);
   if (!cached) return res.status(404).json({ error: `No rate for ${corridor}` });
 
   const rate = JSON.parse(cached);
@@ -122,7 +138,7 @@ app.get('/api/forex/v1/rate', async (req, res) => {
  */
 app.post('/internal/v1/forex/spread', async (req, res) => {
   const { corridor, spreadPct } = req.body;
-  await redis.set(`spread:${corridor}`, spreadPct.toString());
+  await redisSet(`spread:${corridor}`, spreadPct.toString());
   res.json({ ok: true });
 });
 

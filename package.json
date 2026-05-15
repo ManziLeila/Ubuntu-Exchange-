@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "install-all": "npm install && npm --prefix services/core install && npm --prefix services/forex install && npm --prefix services/notification install && npm --prefix web-v2 install",
-    "start": "concurrently \"npm --prefix services/core run dev\" \"npm --prefix services/forex start\" \"npm --prefix web-v2 run dev\" --names \"core,forex,web\" --prefix \"[{time}] {name}:\" --kill-others-on-fail",
+    "start": "concurrently \"npm --prefix services/core run dev\" \"npm --prefix services/forex start\" \"npm --prefix web-v2 run dev\" --names \"core,forex,web\" --prefix \"[{time}] {name}:\"",
     "start:core": "npm --prefix services/core run dev",
     "start:forex": "npm --prefix services/forex start",
     "start:web": "npm --prefix web-v2 run dev",
