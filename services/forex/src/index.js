@@ -13,7 +13,10 @@ const redis = new Redis(process.env.REDIS_URL, {
   enableOfflineQueue: false,
   retryStrategy: (times) => Math.min(times * 1000, 30000),
 });
-redis.on('error', (err) => console.error('[forex] Redis error:', err.message));
+let _forexRedisErrLogged = false;
+redis.on('error', () => {
+  if (!_forexRedisErrLogged) { console.error('[forex] Redis unavailable, rate caching disabled'); _forexRedisErrLogged = true; }
+});
 
 const CORRIDORS = [
   { corridor: 'RWF_GHS', from: 'RWF', to: 'GHS' },
