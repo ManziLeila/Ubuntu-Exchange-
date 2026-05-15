@@ -5,8 +5,13 @@ const { generateURC } = require('../utils/helpers');
 const Bull = require('bull');
 const { Decimal } = require('@prisma/client/runtime/library');
 
-const notifQueue = new Bull('notifications', process.env.REDIS_URL);
-notifQueue.on('error', (err) => console.error('[core] transferService queue error:', err.message));
+const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
+  redis: { enableOfflineQueue: false, maxRetriesPerRequest: null, retryStrategy: (n) => Math.min(n * 5000, 60000) }
+});
+let _transferQueueErrLogged = false;
+notifQueue.on('error', () => {
+  if (!_transferQueueErrLogged) { console.error('[core] transferService queue: Redis unavailable, email notifications disabled'); _transferQueueErrLogged = true; }
+});
 
 function emitSocketEvent(event, room, data) {
   try {

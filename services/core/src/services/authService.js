@@ -5,8 +5,13 @@ const logger = require('../utils/logger');
 const { generateResetToken } = require('../utils/helpers');
 const Bull = require('bull');
 
-const notifQueue = new Bull('notifications', process.env.REDIS_URL);
-notifQueue.on('error', (err) => console.error('[core] authService queue error:', err.message));
+const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
+  redis: { enableOfflineQueue: false, maxRetriesPerRequest: null, retryStrategy: (n) => Math.min(n * 5000, 60000) }
+});
+let _authQueueErrLogged = false;
+notifQueue.on('error', (err) => {
+  if (!_authQueueErrLogged) { console.error('[core] authService queue: Redis unavailable, email notifications disabled'); _authQueueErrLogged = true; }
+});
 
 const BCRYPT_ROUNDS = 12;
 const MAX_LOGIN_ATTEMPTS = 10;

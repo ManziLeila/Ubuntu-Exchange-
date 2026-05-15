@@ -6,8 +6,13 @@ const Bull = require('bull');
 const { Decimal } = require('@prisma/client/runtime/library');
 const currencyService = require('../services/currencyService');
 
-const notifQueue = new Bull('notifications', process.env.REDIS_URL);
-notifQueue.on('error', (err) => console.error('[core] admin queue error:', err.message));
+const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
+  redis: { enableOfflineQueue: false, maxRetriesPerRequest: null, retryStrategy: (n) => Math.min(n * 5000, 60000) }
+});
+let _adminQueueErrLogged = false;
+notifQueue.on('error', () => {
+  if (!_adminQueueErrLogged) { console.error('[core] admin queue: Redis unavailable, email notifications disabled'); _adminQueueErrLogged = true; }
+});
 const router = express.Router();
 
 // All admin routes require admin role
