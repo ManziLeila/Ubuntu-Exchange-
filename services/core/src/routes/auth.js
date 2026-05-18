@@ -216,4 +216,53 @@ router.get('/me', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * PUT /api/v1/auth/profile
+ */
+router.put('/profile', authenticate, async (req, res, next) => {
+  try {
+    const prisma = require('../utils/prisma');
+    const { name, msisdn, country } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+
+    const updated = await prisma.user.update({
+      where: { id: req.user.sub },
+      data: {
+        name: name.trim(),
+        msisdn: msisdn?.trim() || null,
+        country: country?.trim() || null,
+      },
+    });
+
+    const { passwordHash, resetToken, resetTokenExpiresAt, loginAttempts, lockedUntil, ...safe } = updated;
+    res.json({ user: safe });
+  } catch (err) { next(err); }
+});
+
+/**
+ * PUT /api/v1/auth/change-password
+ */
+router.put('/change-password', authenticate, async (req, res, next) => {
+  try {
+    const bcrypt = require('bcrypt');
+    const prisma = require('../utils/prisma');
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.sub } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.passwordHash) return res.status(400).json({ error: 'Password login is not available for this account' });
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: req.user.sub }, data: { passwordHash: newHash } });
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
