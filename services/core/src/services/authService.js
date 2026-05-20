@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
 const logger = require('../utils/logger');
 const { generateResetToken } = require('../utils/helpers');
+const otpService = require('./otpService');
 const Bull = require('bull');
 
 const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
@@ -32,7 +33,7 @@ async function register(data, requestId) {
 
   const user = await prisma.$transaction(async (tx) => {
     const u = await tx.user.create({
-      data: { email, name, passwordHash, country, msisdn, role: 'client' }
+      data: { email, name, passwordHash, country, msisdn, role: 'client', status: 'pending' }
     });
     // Create wallet for client
     await tx.clientWallet.create({ data: { userId: u.id, currency: 'RWF' } });
@@ -47,16 +48,11 @@ async function register(data, requestId) {
     return u;
   });
 
-  // Send welcome email
-  await notifQueue.add('send_email', {
-    template: 'welcome_client',
-    to: email,
-    data: { name },
-    idempotency_key: `welcome_${user.id}`
-  });
+  // Generate email verification OTP (welcome email sent after verification)
+  const { otpId } = await otpService.generateOtp(user.id, 'email_verify');
 
-  logger.info({ msg: 'User registered', userId: user.id, requestId });
-  return sanitizeUser(user);
+  logger.info({ msg: 'User registered (pending verification)', userId: user.id, requestId });
+  return { requiresVerification: true, otpId, userId: user.id };
 }
 
 async function login(email, password, requestId) {
@@ -102,6 +98,20 @@ async function login(email, password, requestId) {
 
     const err = new Error('Invalid email or password');
     err.status = 401;
+    throw err;
+  }
+
+  // Block unverified accounts
+  if (user.status === 'pending') {
+    const err = new Error('Please verify your email address before signing in.');
+    err.status = 403;
+    err.code = 'EMAIL_NOT_VERIFIED';
+    throw err;
+  }
+
+  if (user.status === 'suspended') {
+    const err = new Error('Account suspended. Please contact support.');
+    err.status = 403;
     throw err;
   }
 
@@ -190,6 +200,43 @@ async function resetPassword(token, newPassword, requestId) {
   });
 }
 
+async function verifyEmail(userId, otpId, code) {
+  await otpService.verifyOtp(userId, otpId, code, 'email_verify');
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { status: 'active' },
+  });
+
+  // Send welcome email now that account is verified
+  await notifQueue.add('send_email', {
+    template: 'welcome_client',
+    to: user.email,
+    data: { name: user.name },
+    idempotency_key: `welcome_${user.id}`,
+  });
+
+  logger.info({ msg: 'Email verified', userId });
+  return sanitizeUser(user);
+}
+
+async function resendVerificationOtp(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    const err = new Error('User not found');
+    err.status = 404;
+    throw err;
+  }
+  if (user.status !== 'pending') {
+    const err = new Error('Account is already verified');
+    err.status = 400;
+    throw err;
+  }
+
+  const { otpId } = await otpService.generateOtp(userId, 'email_verify');
+  return { otpId };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function generateTokens(user) {
   const payload = { sub: user.id, email: user.email, role: user.role };
@@ -273,4 +320,4 @@ async function googleAuth(idToken, requestId) {
   return { user: sanitizeUser(user), ...tokens };
 }
 
-module.exports = { register, login, googleAuth, refreshToken, forgotPassword, resetPassword };
+module.exports = { register, login, googleAuth, refreshToken, forgotPassword, resetPassword, verifyEmail, resendVerificationOtp };
