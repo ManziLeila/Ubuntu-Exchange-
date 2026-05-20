@@ -20,8 +20,8 @@ const authLimiter = rateLimit({
 router.post('/register', authLimiter, async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
-    const user = await authService.register(data, req.requestId);
-    res.status(201).json({ user });
+    const result = await authService.register(data, req.requestId);
+    res.status(201).json(result);
   } catch (err) { next(err); }
 });
 
@@ -88,6 +88,32 @@ router.post('/refresh', async (req, res, next) => {
 router.post('/logout', (req, res) => {
   res.clearCookie('refreshToken');
   res.json({ message: 'Logged out successfully' });
+});
+
+/**
+ * POST /api/v1/auth/verify-email
+ */
+router.post('/verify-email', authLimiter, async (req, res, next) => {
+  try {
+    const { userId, otpId, code } = req.body;
+    if (!userId || !otpId || !code) {
+      return res.status(400).json({ error: 'userId, otpId, and code are required' });
+    }
+    await authService.verifyEmail(userId, otpId, code);
+    res.json({ message: 'Email verified successfully. You can now sign in.' });
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/v1/auth/resend-otp
+ */
+router.post('/resend-otp', authLimiter, async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const result = await authService.resendVerificationOtp(userId);
+    res.json({ ...result, message: 'OTP sent to your email address.' });
+  } catch (err) { next(err); }
 });
 
 /**
