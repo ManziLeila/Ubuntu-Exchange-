@@ -161,6 +161,27 @@ const templates = {
     `),
     text: `Low liquidity alert: ${currency} pool at ${currentBalance} (threshold: ${threshold}). Top up immediately.`
   }),
+
+  otp_code: ({ name, code, purpose, expiresInMinutes }) => {
+    let purposeText = 'secure your account';
+    if (purpose === 'transaction_confirm') purposeText = 'confirm your transaction';
+    if (purpose === 'login_2fa') purposeText = 'log in (2FA)';
+    if (purpose === 'phone_verify') purposeText = 'verify your phone number';
+    if (purpose === 'password_reset') purposeText = 'reset your password';
+
+    return {
+      subject: `GlobalTransact OTP Code: ${code}`,
+      html: wrapTemplate(`
+        <h2>Your OTP Verification Code 🔐</h2>
+        <p>Hi ${name},</p>
+        <p>Use the verification code below to ${purposeText}. This code is valid for <strong>${expiresInMinutes} minutes</strong>.</p>
+        <div class="urc">${code}</div>
+        <p style="color:#e53e3e;font-size:13px;text-align:center;">⚠️ For your security, never share this code with anyone, including GlobalTransact staff.</p>
+        <p style="font-size:13px;color:#718096;margin-top:24px;">If you did not initiate this request, please secure your account immediately or contact support.</p>
+      `),
+      text: `Hi ${name}, your GlobalTransact OTP verification code is ${code}. It is valid for ${expiresInMinutes} minutes to ${purposeText}. Do not share this code.`
+    };
+  },
 };
 
 module.exports = templates;
