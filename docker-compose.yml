@@ -126,21 +126,21 @@ services:
       - globaltransact-network
 
   # Next.js v2 frontend
-  # next:
-  #   build: ./web-v2
-  #   container_name: globaltransact-next
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     NODE_ENV: production
-  #     PORT: 3000
-  #     NEXT_PUBLIC_API_URL: http://localhost:3001
-  #     NEXT_PUBLIC_SOCKET_URL: http://localhost:3001
-  #   depends_on:
-  #     - core
-  #   networks:
-  #     - globaltransact-network
+  next:
+    build: ./web-v2
+    container_name: globaltransact-next
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://localhost
+      NEXT_PUBLIC_SOCKET_URL: http://localhost
+    depends_on:
+      - core
+    networks:
+      - globaltransact-network
 
   nginx:
     image: nginx:alpine

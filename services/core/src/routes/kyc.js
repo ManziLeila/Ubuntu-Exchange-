@@ -11,6 +11,9 @@ const path = require('path');
 router.post('/documents', authenticate, kycUpload.fields([
   { name: 'national_id', maxCount: 1 },
   { name: 'passport', maxCount: 1 },
+  { name: 'drivers_license', maxCount: 1 },
+  { name: 'document_photo', maxCount: 1 },
+  { name: 'personal_photo', maxCount: 1 },
   { name: 'selfie', maxCount: 1 },
   { name: 'utility_bill', maxCount: 1 },
 ]), async (req, res, next) => {
@@ -21,7 +24,7 @@ router.post('/documents', authenticate, kycUpload.fields([
     const files = Object.entries(req.files).flatMap(([fieldname, arr]) =>
       arr.map(f => ({ ...f, fieldname }))
     );
-    const result = await kycService.submitDocuments(req.user.id, files);
+    const result = await kycService.submitDocuments(req.user.id, files, req.body);
     res.status(201).json(result);
   } catch (err) { next(err); }
 });

@@ -4,7 +4,7 @@ const { z } = require('zod');
 const email = z.string().email().transform(v => v.toLowerCase().trim());
 const msisdn = z.string().regex(/^\+[1-9]\d{7,14}$/, 'MSISDN must be in E.164 format (e.g. +250781234567)');
 const amount = z.number().positive().finite().multipleOf(0.01).max(100_000_000);
-const currency = z.enum(['RWF', 'GHS', 'UGX', 'KES', 'USD', 'EUR', 'GBP']);
+const currency = z.enum(['RWF', 'GHS', 'UGX', 'KES', 'USD', 'EUR', 'GBP', 'AED', 'TZS']);
 const urc = z.string().regex(/^[0-9]{12}$/, 'URC must be exactly 12 digits');
 
 // Auth schemas
@@ -34,6 +34,7 @@ const resetPasswordSchema = z.object({
 
 // Transfer schemas
 const initiateTransferSchema = z.object({
+  corridor: z.string().regex(/^[A-Z]{3}_[A-Z]{3}$/),
   recipientName: z.string().min(2).max(100).trim(),
   recipientMsisdn: msisdn,
   recipientCountry: z.string().min(2).max(50),
@@ -41,7 +42,7 @@ const initiateTransferSchema = z.object({
   recvCurrency: currency,
   sendAmount: amount,
   fundingMethod: z.enum(['momo', 'cash', 'wallet']).default('momo'),
-  payoutMethod: z.enum(['momo', 'cash']).default('momo'),
+  payoutMethod: z.enum(['momo', 'cash', 'bank']).default('momo'),
   agentId: z.string().uuid().optional(),
 });
 

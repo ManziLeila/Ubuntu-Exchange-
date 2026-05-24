@@ -30,7 +30,7 @@ function fileFilter(req, file, cb) {
 const kycUpload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: MAX_SIZE, files: 4 },
+  limits: { fileSize: MAX_SIZE, files: 6 },
 });
 
 // Agent application upload — stores to /uploads/agent-applications/{tempId}/

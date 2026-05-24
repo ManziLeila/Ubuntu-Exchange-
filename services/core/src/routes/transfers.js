@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireKyc } = require('../middleware/auth');
 const { initiateTransferSchema, approveTransferSchema, rejectTransferSchema } = require('../middleware/validate');
 const transferService = require('../services/transferService');
 const prisma = require('../utils/prisma');
@@ -9,7 +9,7 @@ const router = express.Router();
 /**
  * POST /api/v1/transfers — Initiate a transfer (client or agent)
  */
-router.post('/', authenticate, async (req, res, next) => {
+router.post('/', authenticate, requireKyc, async (req, res, next) => {
   try {
     const data = initiateTransferSchema.parse(req.body);
     const transfer = await transferService.initiateTransfer(req.user.sub, data, req.requestId);
