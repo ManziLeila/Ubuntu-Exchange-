@@ -19,19 +19,19 @@ redis.on('error', () => {
 });
 
 const CORRIDORS = [
-  { corridor: 'RWF_GHS', from: 'RWF', to: 'GHS' },
-  { corridor: 'RWF_UGX', from: 'RWF', to: 'UGX' },
   { corridor: 'RWF_KES', from: 'RWF', to: 'KES' },
-  { corridor: 'RWF_USD', from: 'RWF', to: 'USD' },
-  { corridor: 'RWF_EUR', from: 'RWF', to: 'EUR' },
+  { corridor: 'RWF_UGX', from: 'RWF', to: 'UGX' },
+  { corridor: 'RWF_AED', from: 'RWF', to: 'AED' },
+  { corridor: 'RWF_TZS', from: 'RWF', to: 'TZS' },
+  { corridor: 'RWF_RWF', from: 'RWF', to: 'RWF' },
 ];
 
 const DEFAULT_SPREADS = {
-  RWF_GHS: parseFloat(process.env.DEFAULT_SPREAD_RWF_GHS || '0.025'),
-  RWF_UGX: parseFloat(process.env.DEFAULT_SPREAD_RWF_UGX || '0.020'),
   RWF_KES: parseFloat(process.env.DEFAULT_SPREAD_RWF_KES || '0.022'),
-  RWF_USD: parseFloat(process.env.DEFAULT_SPREAD_RWF_USD || '0.030'),
-  RWF_EUR: parseFloat(process.env.DEFAULT_SPREAD_RWF_EUR || '0.030'),
+  RWF_UGX: parseFloat(process.env.DEFAULT_SPREAD_RWF_UGX || '0.020'),
+  RWF_AED: parseFloat(process.env.DEFAULT_SPREAD_RWF_AED || '0.030'),
+  RWF_TZS: parseFloat(process.env.DEFAULT_SPREAD_RWF_TZS || '0.022'),
+  RWF_RWF: parseFloat(process.env.DEFAULT_SPREAD_RWF_RWF || '0.000'),
 };
 
 /**
@@ -47,9 +47,7 @@ async function fetchAndStoreRates() {
     const fetchedAt = new Date();
 
     for (const { corridor, from, to } of CORRIDORS) {
-      const fromToUSD = 1 / usdRates[from]; // How many USD per 1 unit of from
-      const toPerUSD  = usdRates[to];        // How many units of to per 1 USD
-      const midRate   = fromToUSD * toPerUSD; // How many units of to per 1 unit of from
+      const midRate = from === to ? 1 : (1 / usdRates[from]) * usdRates[to];
 
       const spreadPct = await getSpread(corridor);
       const clientRate = midRate * (1 - spreadPct);

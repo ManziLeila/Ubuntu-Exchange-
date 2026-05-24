@@ -166,10 +166,11 @@ async function main() {
 
   // ── 5. Forex rates ───────────────────────────────────────────────────────────
   const rates = [
-    { corridor: 'RWF_GHS', fromCcy: 'RWF', toCcy: 'GHS', midRate: 0.00088,  spreadPct: 0.025, clientRate: 0.000858  },
-    { corridor: 'RWF_UGX', fromCcy: 'RWF', toCcy: 'UGX', midRate: 3.45,     spreadPct: 0.020, clientRate: 3.381    },
-    { corridor: 'RWF_KES', fromCcy: 'RWF', toCcy: 'KES', midRate: 0.1286,   spreadPct: 0.022, clientRate: 0.1258   },
-    { corridor: 'RWF_USD', fromCcy: 'RWF', toCcy: 'USD', midRate: 0.00072,  spreadPct: 0.030, clientRate: 0.000698 },
+    { corridor: 'RWF_KES', fromCcy: 'RWF', toCcy: 'KES', midRate: 0.1286, spreadPct: 0.022, clientRate: 0.1258 },
+    { corridor: 'RWF_UGX', fromCcy: 'RWF', toCcy: 'UGX', midRate: 3.45, spreadPct: 0.020, clientRate: 3.381 },
+    { corridor: 'RWF_AED', fromCcy: 'RWF', toCcy: 'AED', midRate: 0.00265, spreadPct: 0.030, clientRate: 0.00257 },
+    { corridor: 'RWF_TZS', fromCcy: 'RWF', toCcy: 'TZS', midRate: 1.95, spreadPct: 0.022, clientRate: 1.907 },
+    { corridor: 'RWF_RWF', fromCcy: 'RWF', toCcy: 'RWF', midRate: 1, spreadPct: 0, clientRate: 1 },
   ];
   for (const r of rates) {
     const existing = await prisma.forexRate.findFirst({ where: { corridor: r.corridor }, orderBy: { fetchedAt: 'desc' } });
@@ -262,7 +263,7 @@ async function main() {
         type:     'large_transaction',
         severity: 'MEDIUM',
         status:   'OPEN',
-        details:  { amount: 750000, currency: 'RWF', corridor: 'RWF_GHS', description: 'Client attempted a transfer of 750,000 RWF which exceeds the large-transaction threshold.' },
+        details:  { amount: 750000, currency: 'RWF', corridor: 'RWF_KES', description: 'Client attempted a transfer of 750,000 RWF which exceeds the large-transaction threshold.' },
       },
     });
   }

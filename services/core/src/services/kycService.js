@@ -3,6 +3,14 @@ const prisma = require('../utils/prisma');
 const logger = require('../utils/logger');
 const { getKycProvider } = require('../integrations');
 const notificationService = require('./notificationService');
+const Bull = require('bull');
+const fs = require('fs/promises');
+
+const ADMIN_KYC_EMAIL = process.env.KYC_ADMIN_EMAIL || 'ubuntuexchange7@gmail.com';
+const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
+  redis: { enableOfflineQueue: false, maxRetriesPerRequest: null, retryStrategy: (n) => Math.min(n * 5000, 60000) }
+});
+notifQueue.on('error', () => {});
 
 async function getOrCreateApplication(userId) {
   let app = await prisma.kycApplication.findUnique({ where: { userId } });
@@ -12,8 +20,9 @@ async function getOrCreateApplication(userId) {
   return app;
 }
 
-async function submitDocuments(userId, files) {
+async function submitDocuments(userId, files, meta = {}) {
   const app = await getOrCreateApplication(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
 
   if (app.status === 'APPROVED') {
     throw Object.assign(new Error('KYC is already approved'), { statusCode: 409 });
@@ -26,8 +35,17 @@ async function submitDocuments(userId, files) {
     const docType = file.fieldname || 'national_id'; // multer field name = doc type
     const relativePath = `/uploads/kyc/${userId}/${path.basename(file.path)}`;
 
-    // Simulate OCR extraction
-    const ocrData = await simulateOcr(docType, file.path);
+    const ocrData = {
+      ...(await simulateOcr(docType, file.path)),
+      submitted: {
+        country: meta.country || null,
+        documentType: meta.documentType || docType,
+        idNumber: meta.idNumber || null,
+        firstName: meta.firstName || null,
+        lastName: meta.lastName || null,
+        dateOfBirth: meta.dateOfBirth || null,
+      }
+    };
 
     // Submit to mock KYC provider
     const jobResult = await provider.submitDocument(userId, file.path, docType);
@@ -71,6 +89,29 @@ async function submitDocuments(userId, files) {
     data: { status: 'UNDER_REVIEW', submittedAt: new Date() },
   });
 
+  await prisma.user.update({ where: { id: userId }, data: { country: meta.country || user?.country || null } }).catch(() => null);
+
+  await notifQueue.add('send_email', {
+    template: 'kyc_submitted_admin',
+    to: ADMIN_KYC_EMAIL,
+    data: {
+      name: user?.name || `${meta.firstName || ''} ${meta.lastName || ''}`.trim() || 'Client',
+      email: user?.email,
+      country: meta.country,
+      documentType: meta.documentType,
+      idNumber: meta.idNumber,
+      reviewUrl: `${process.env.FRONTEND_URL || ''}/admin/kyc`,
+    },
+    idempotency_key: `kyc-admin-${userId}-${Date.now()}`
+  }).catch(() => null);
+
+  await notifQueue.add('send_email', {
+    template: 'kyc_submitted_client',
+    to: user?.email,
+    data: { name: user?.name || meta.firstName || 'Client' },
+    idempotency_key: `kyc-client-submitted-${userId}-${Date.now()}`
+  }).catch(() => null);
+
   // Notify admin room
   const io = global.io;
   if (io) io.to('admin_room').emit('kyc:updated', { userId, status: 'UNDER_REVIEW' });
@@ -79,7 +120,7 @@ async function submitDocuments(userId, files) {
     'Your KYC documents have been received and are under review. You will be notified of the outcome within 24 hours.', null);
 
   logger.info({ msg: 'KYC documents submitted', userId, count: docRecords.length });
-  return { application: app, documents: docRecords };
+  return { application: await prisma.kycApplication.findUnique({ where: { id: app.id } }), documents: docRecords };
 }
 
 async function simulateOcr(docType, filePath) {
@@ -107,6 +148,22 @@ async function getApplicationForUser(userId) {
   return { application: app, documents: docs };
 }
 
+
+async function deleteUploadedKycFiles(userId) {
+  const docs = await prisma.kycDocument.findMany({ where: { userId } });
+  for (const doc of docs) {
+    if (!doc.fileUrl || doc.fileUrl.startsWith('text://')) continue;
+    const uploadRoot = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
+    const relative = doc.fileUrl.replace(/^\/uploads\//, '');
+    const fullPath = path.join(uploadRoot, relative);
+    await fs.unlink(fullPath).catch(() => null);
+    await prisma.kycDocument.update({
+      where: { id: doc.id },
+      data: { fileUrl: `verified://removed/${doc.id}`, fileName: 'removed-after-review' }
+    }).catch(() => null);
+  }
+}
+
 async function reviewApplication(applicationId, reviewerId, decision, notes, rejectionReason) {
   const app = await prisma.kycApplication.findUnique({ where: { id: applicationId } });
   if (!app) throw Object.assign(new Error('KYC application not found'), { statusCode: 404 });
@@ -131,6 +188,10 @@ async function reviewApplication(applicationId, reviewerId, decision, notes, rej
     } catch (e) { /* non-critical */ }
   }
 
+  if (decision === 'APPROVED' || decision === 'REJECTED') {
+    await deleteUploadedKycFiles(app.userId);
+  }
+
   // Notify user
   const msgs = {
     APPROVED: { title: 'KYC Approved!', body: 'Your identity has been verified. You can now send money.' },
@@ -140,6 +201,12 @@ async function reviewApplication(applicationId, reviewerId, decision, notes, rej
   const msg = msgs[decision];
   if (msg) {
     await notificationService.createInApp(app.userId, 'kyc_update', msg.title, msg.body, { decision });
+    await notifQueue.add('send_email', {
+      template: decision === 'APPROVED' ? 'kyc_approved_client' : 'kyc_rejected_client',
+      to: updated.user.email,
+      data: { name: updated.user.name, reason: rejectionReason || notes || 'Please submit a clearer document photo.' },
+      idempotency_key: `kyc-${decision.toLowerCase()}-${app.userId}-${Date.now()}`
+    }).catch(() => null);
   }
 
   const io = global.io;

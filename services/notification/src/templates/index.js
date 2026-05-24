@@ -162,6 +162,56 @@ const templates = {
     text: `Low liquidity alert: ${currency} pool at ${currentBalance} (threshold: ${threshold}). Top up immediately.`
   }),
 
+
+
+  kyc_submitted_admin: ({ name, email, country, documentType, idNumber, reviewUrl }) => ({
+    subject: 'New KYC Submission Requires Review',
+    html: wrapTemplate(`
+      <h2>New KYC Submission</h2>
+      <p>A client has submitted KYC documents and is waiting for admin review.</p>
+      <div class="card">
+        <div class="card-row"><span class="card-label">Client</span><span class="card-value">${name}</span></div>
+        <div class="card-row"><span class="card-label">Email</span><span class="card-value">${email || 'N/A'}</span></div>
+        <div class="card-row"><span class="card-label">Country</span><span class="card-value">${country || 'N/A'}</span></div>
+        <div class="card-row"><span class="card-label">Document</span><span class="card-value">${documentType || 'N/A'}</span></div>
+        <div class="card-row"><span class="card-label">ID/Passport No.</span><span class="card-value">${idNumber || 'N/A'}</span></div>
+      </div>
+      <div style="text-align:center;margin:32px 0"><a class="btn" href="${reviewUrl}">Review KYC</a></div>
+    `),
+    text: `New KYC submission from ${name} (${email || 'no email'}). Review: ${reviewUrl}`
+  }),
+
+  kyc_submitted_client: ({ name }) => ({
+    subject: 'Your KYC Documents Were Submitted',
+    html: wrapTemplate(`
+      <h2>KYC Submitted</h2>
+      <p>Hi ${name}, your KYC documents were received successfully.</p>
+      <p>Our admin team will review them. You will receive another email when your KYC is approved or rejected.</p>
+    `),
+    text: `Hi ${name}, your KYC documents were received and are under review.`
+  }),
+
+  kyc_approved_client: ({ name }) => ({
+    subject: 'KYC Approved - You Can Now Send Money',
+    html: wrapTemplate(`
+      <h2>KYC Approved ?</h2>
+      <p>Hi ${name}, your identity has been verified.</p>
+      <p>You can now make transfers on Ubuntu International Exchange.</p>
+    `),
+    text: `Hi ${name}, your KYC has been approved. You can now send money.`
+  }),
+
+  kyc_rejected_client: ({ name, reason }) => ({
+    subject: 'KYC Rejected - Action Required',
+    html: wrapTemplate(`
+      <h2>KYC Rejected</h2>
+      <p>Hi ${name}, your KYC submission was rejected.</p>
+      <div class="card"><div class="card-row"><span class="card-label">Reason</span><span class="card-value">${reason}</span></div></div>
+      <p>Please upload a clear document photo and personal photo again.</p>
+    `),
+    text: `Hi ${name}, your KYC was rejected. Reason: ${reason}. Please upload again.`
+  }),
+
   otp_code: ({ name, code, purpose, expiresInMinutes }) => {
     let purposeText = 'secure your account';
     if (purpose === 'transaction_confirm') purposeText = 'confirm your transaction';
