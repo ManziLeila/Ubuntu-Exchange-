@@ -12,6 +12,41 @@ const notifQueue = new Bull('notifications', process.env.REDIS_URL, {
 });
 notifQueue.on('error', () => {});
 
+function buildAdminReviewUrl(applicationId) {
+  const base = process.env.FRONTEND_URL || '';
+  const path = applicationId ? `/admin/kyc/${applicationId}` : '/admin/kyc';
+  return `${base}${path}`;
+}
+
+async function notifyAdminsOfKycSubmission(applicationId, user, meta = {}) {
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', status: { not: 'suspended' } },
+    select: { id: true },
+  });
+  const applicantName = user?.name || `${meta.firstName || ''} ${meta.lastName || ''}`.trim() || 'Client';
+  const actionUrl = buildAdminReviewUrl(applicationId);
+
+  await Promise.all(admins.map((admin) =>
+    notificationService.createInApp(
+      admin.id,
+      'kyc_review',
+      'New KYC application submitted',
+      `${applicantName} submitted KYC documents and is waiting for review.`,
+      { applicationId, userId: user?.id, actionUrl },
+    )
+  ));
+
+  const io = global.io;
+  if (io) {
+    io.to('admin_room').emit('kyc:updated', {
+      applicationId,
+      userId: user?.id,
+      status: 'UNDER_REVIEW',
+      actionUrl,
+    });
+  }
+}
+
 async function getOrCreateApplication(userId) {
   let app = await prisma.kycApplication.findUnique({ where: { userId } });
   if (!app) {
@@ -100,7 +135,7 @@ async function submitDocuments(userId, files, meta = {}) {
       country: meta.country,
       documentType: meta.documentType,
       idNumber: meta.idNumber,
-      reviewUrl: `${process.env.FRONTEND_URL || ''}/admin/kyc`,
+      reviewUrl: buildAdminReviewUrl(app.id),
     },
     idempotency_key: `kyc-admin-${userId}-${Date.now()}`
   }).catch(() => null);
@@ -112,9 +147,7 @@ async function submitDocuments(userId, files, meta = {}) {
     idempotency_key: `kyc-client-submitted-${userId}-${Date.now()}`
   }).catch(() => null);
 
-  // Notify admin room
-  const io = global.io;
-  if (io) io.to('admin_room').emit('kyc:updated', { userId, status: 'UNDER_REVIEW' });
+  await notifyAdminsOfKycSubmission(app.id, user, meta);
 
   await notificationService.createInApp(userId, 'kyc_update', 'KYC Documents Submitted',
     'Your KYC documents have been received and are under review. You will be notified of the outcome within 24 hours.', null);
@@ -216,6 +249,35 @@ async function reviewApplication(applicationId, reviewerId, decision, notes, rej
   return updated;
 }
 
+async function deleteApplication(applicationId, adminId) {
+  const app = await prisma.kycApplication.findUnique({
+    where: { id: applicationId },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+  if (!app) throw Object.assign(new Error('KYC application not found'), { statusCode: 404 });
+
+  await deleteUploadedKycFiles(app.userId);
+  await prisma.kycDocument.deleteMany({ where: { userId: app.userId } });
+  await prisma.kycApplication.delete({ where: { id: applicationId } });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'kyc',
+      entityId: applicationId,
+      action: 'delete',
+      actorId: adminId,
+      actorRole: 'admin',
+      payload: { userId: app.userId, userEmail: app.user?.email, previousStatus: app.status },
+    },
+  }).catch(() => null);
+
+  const io = global.io;
+  if (io) io.to('admin_room').emit('kyc:deleted', { applicationId, userId: app.userId });
+
+  logger.info({ msg: 'KYC application deleted', applicationId, adminId });
+  return { deleted: true, applicationId };
+}
+
 async function getPendingApplications(page = 1, limit = 20) {
   const skip = (page - 1) * limit;
   const where = { status: { in: ['UNDER_REVIEW', 'PENDING'] } };
@@ -274,8 +336,9 @@ async function submitIdDetails(userId, { idType, idNumber, expiryDate }) {
     data: { status: 'UNDER_REVIEW', submittedAt: new Date() },
   });
 
-  const io = global.io;
-  if (io) io.to('admin_room').emit('kyc:updated', { userId, status: 'UNDER_REVIEW' });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const updatedApp = await prisma.kycApplication.findUnique({ where: { id: app.id } });
+  await notifyAdminsOfKycSubmission(updatedApp.id, user, { idType, idNumber });
 
   await notificationService.createInApp(userId, 'kyc_update', 'KYC Details Submitted',
     'Your ID details are under review. You will be notified within 24 hours.', null);
@@ -292,4 +355,5 @@ module.exports = {
   getPendingApplications,
   getAllApplications,
   getOrCreateApplication,
+  deleteApplication,
 };

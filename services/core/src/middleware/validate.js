@@ -116,6 +116,14 @@ const kycReviewSchema = z.object({
   decision: z.enum(['APPROVED', 'REJECTED', 'REQUIRES_DOCS', 'UNDER_REVIEW']),
   reviewNotes: z.string().max(1000).optional(),
   rejectionReason: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.decision === 'REJECTED' && !data.rejectionReason?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rejectionReason'],
+      message: 'Rejection reason is required when rejecting KYC',
+    });
+  }
 });
 
 // Fraud alert resolution schema

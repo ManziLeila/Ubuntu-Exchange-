@@ -97,4 +97,12 @@ router.post('/admin/applications/:id/review', authenticate, authorize(ROLES.ADMI
   } catch (err) { next(err); }
 });
 
+// Admin: delete an application and its uploaded KYC documents
+router.delete('/admin/applications/:id', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
+  try {
+    const result = await kycService.deleteApplication(req.params.id, req.user.id);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
