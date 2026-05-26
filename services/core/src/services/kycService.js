@@ -104,12 +104,21 @@ async function submitDocuments(userId, files, meta = {}) {
       try {
         const result = await provider.getResult(jobResult.jobId);
         if (!result || result.status !== 'COMPLETED') return;
-        const updates = { status: result.verified ? 'APPROVED' : 'REJECTED' };
-        if (docType === 'selfie' && result.verified) {
-          updates.faceMatchScore = result.confidence || 0.95;
-        }
-        if (result.data && updates.ocrData === undefined) {
-          // Merge OCR data
+        const current = await prisma.kycDocument.findUnique({ where: { id: doc.id } });
+        const currentOcr = current?.ocrData && typeof current.ocrData === 'object' ? current.ocrData : {};
+        const updates = {
+          ocrData: {
+            ...currentOcr,
+            providerCheck: {
+              status: result.verified ? 'PASSED' : 'NEEDS_REVIEW',
+              confidence: result.confidence || null,
+              reason: result.reason || null,
+              data: result.data || null,
+            },
+          },
+        };
+        if (docType === 'selfie' && result.confidence) {
+          updates.faceMatchScore = result.confidence;
         }
         await prisma.kycDocument.update({ where: { id: doc.id }, data: updates });
       } catch (e) {
