@@ -125,22 +125,38 @@ services:
     networks:
       - globaltransact-network
 
-  # Next.js v2 frontend
+  # Next.js v2 frontend (disabled - running separately)
+  #  #  next:
+  #  #    build: ./web-v2
+  #  #    container_name: globaltransact-next
+  #  #    restart: unless-stopped
+  #  #    ports:
+  #  #      - "3000:3000"
+  #  #    environment:
+  #  #      NODE_ENV: production
+  #  #      PORT: 3000
+  #  #      NEXT_PUBLIC_API_URL: http://localhost
+  #  #      NEXT_PUBLIC_SOCKET_URL: http://localhost
+  #  #    depends_on:
+  #  #      - core
+  #    #networks:
+      #- globaltransact-network
   next:
-    build: ./web-v2
+    build:
+      context: ..
+      dockerfile: ubuntu-Frontend/Dockerfile
     container_name: globaltransact-next
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      NEXT_PUBLIC_API_URL: http://localhost
-      NEXT_PUBLIC_SOCKET_URL: http://localhost
+      NEXT_PUBLIC_API_URL: https://ubuntu-exchange.com
+      NEXT_PUBLIC_SOCKET_URL: https://ubuntu-exchange.com
     depends_on:
       - core
     networks:
       - globaltransact-network
+
 
   nginx:
     image: nginx:alpine
@@ -159,6 +175,7 @@ services:
       - forex
       - momo
       - notification
+      - next
     networks:
       - globaltransact-network
 

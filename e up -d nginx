@@ -1,0 +1,21 @@
+[0;1;32m●[0m frontend.service - GlobalTransact Frontend
+     Loaded: loaded (]8;;file://localhost/etc/systemd/system/frontend.service/etc/systemd/system/frontend.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Sun 2026-05-24 21:17:37 UTC; 16min ago
+   Main PID: 693 (npm run start -)
+      Tasks: 23 (limit: 4601)
+     Memory: 82.9M (peak: 85.8M)
+        CPU: 1.145s
+     CGroup: /system.slice/frontend.service
+             ├─[0;38;5;245m693 "npm run start -p 3000 -H 0.0.0.0"[0m
+             ├─[0;38;5;245m973 sh -c "next start -p 3000 -H 0.0.0.0 -p 3000 -H 0.0.0.0"[0m
+             └─[0;38;5;245m975 "next-server (v14.2.29)"[0m
+
+May 24 21:17:37 localhost systemd[1]: Started frontend.service - GlobalTransact Frontend.
+May 24 21:17:38 localhost npm[693]: > ubuntu-exchange-web-v2@2.0.0 start
+May 24 21:17:38 localhost npm[693]: > next start -p 3000 -H 0.0.0.0 -p 3000 -H 0.0.0.0
+May 24 21:17:39 localhost npm[975]:   ▲ Next.js 14.2.29
+May 24 21:17:39 localhost npm[975]:   - Local:        http://localhost:3000
+May 24 21:17:39 localhost npm[975]:   - Network:      http://0.0.0.0:3000
+May 24 21:17:39 localhost npm[975]:  ✓ Starting...
+May 24 21:17:39 localhost npm[975]:  ⚠ "next start" does not work with "output: standalone" configuration. Use "node .next/standalone/server.js" instead.
+May 24 21:17:39 localhost npm[975]:  ✓ Ready in 713ms
